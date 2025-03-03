@@ -1,2 +1,3 @@
 # CYBHash
-Choose yummy bit hash.  A hash method hash symbol to value through choose suitable binary. It can quickly map china's future, stock and opiton symbol to any key. Extremely fast for future symbols.  Around 10 times fast than std::unoredered_map.
+Choose "yummy bits" hash. It is a hash method that maps symbols to values by selecting suitable binary representations. It can quickly map China's futures, stocks, and option symbols to any keys. It is extremely fast for futures symbols, approximately 10 times faster than std::unordered_map.
+This method borrows ideas from https://github.com/qlibs/mph and https://github.com/MengRao/str. Compared to mph, the contribution of CYBHash is providing a method to convert option symbols to int64 and build the map at runtime. This feature makes it more convenient. Compared with StrHash, the throughput of CYBHash is around 30% - 100% higher.
