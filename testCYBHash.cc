@@ -22,15 +22,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
  */
 #include "CYB_Hash.h"
-// #include "StrHash.h"
+ #include "StrHash.h"
 
 // 用于文件数据的全局变量
-// const int STR_LEN = 16;
+const int STR_LEN = 16;
 int loop = 10;                      
 std::vector<std::string> tbl_data;  // 订阅的合约
 std::vector<std::string> find_data; // 行情数据
 typedef key32 VALUE_TYPE;
 typedef key64 IDType;
+typedef Str<STR_LEN> Key;
+typedef short Value;
 vector<std::pair<IDType, VALUE_TYPE>> _symbolID;
 
 // 计时函数
@@ -152,7 +154,7 @@ void bench_with_file_data() {
     // bench_file_dense_hash_map();
 }
 
-/*
+
 template<uint32_t HashFunc>
 void bench_hash() {
   StrHash<STR_LEN, Value, 0, HashFunc, true> ht;
@@ -186,7 +188,7 @@ void bench_hash() {
        << " avg lat: " << avg_ns
        <<" ns per lookup " << (1000000000.0 / avg_ns) <<" lookups/sec" << endl;
 }
-*/
+
 
 void bench_china_symbol_table() {
     std::unordered_map<std::string, VALUE_TYPE> symbols;
@@ -317,11 +319,11 @@ int main(int argc, char **argv) {
     load_data_from_file(datafile, testfile);
 
     // 运行各种基准测试
-    //bench_hash<1>();
-    //bench_hash<2>();
-    //bench_hash<3>();
-    //bench_hash<4>();
-    //bench_hash<5>();
+    bench_hash<1>();
+    bench_hash<2>();
+    bench_hash<3>();
+    bench_hash<4>();
+    bench_hash<5>();
     //bench_hash<6>();
     if (mode == "future") {
         bench_future_symbol_table();
