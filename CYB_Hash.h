@@ -65,6 +65,13 @@ public:
     base_symbol_table() {}
 
     bool doneModify() {
+        if(this->size() == 0) {
+            mask = 0;
+            keyValue.resize(1);
+            keyValue[0] = std::pair<IDType, ValueType>{keyValue.size(), ValueType()};
+            return true;
+        }
+
         if(this->size()>1<<MAX_BIT_SIZE) {
             cout<<"table size too large, try using template parameter SmallTbl"<<endl;
             return false;
@@ -75,7 +82,7 @@ public:
             if(find(ids.begin(), ids.end(), id) != ids.end()) {
                 for(auto &q : *this) {
                     if(static_cast<Derived*>(this)->get_id(q.first.data()) == id) {
-                        printf("error %s %s id: %lx\n", q.first.data(), p.first.data(), id);
+                        printf("error %s %s id: %llx\n", q.first.data(), p.first.data(), id);
                         exit(0);
                     }
                 }
@@ -180,6 +187,7 @@ public:
         IDType k = static_cast<const Derived *>(this)->get_key(sym);
         return keyValue[k].second;
     }
+
     
     inline ValueType get_value(const char *sym) const {
         if(!static_cast<const Derived*>(this)->should_process(sym)) {
@@ -252,7 +260,11 @@ template<typename KeyType = std::string, typename ValueType = VALUE_TYPE>
 class option_symbol_table : public base_symbol_table<option_symbol_table<KeyType, ValueType>, KeyType, ValueType> {
 public:
     static constexpr const char* table_name = "option";
-    
+    using Base = base_symbol_table<option_symbol_table<KeyType, ValueType>, KeyType, ValueType>;
+    using Base::get_value;
+    using Base::keyValue;
+    using Base::mask;
+
     // The requires clause should be in a concept or function template, not as a standalone statement
     // Moving the constraint logic to a static_assert
     static_assert(std::is_same<KeyType, std::string>::value || 
@@ -277,6 +289,38 @@ public:
         key64 a = (*(key64*)sym);
         a += t64<<20;
         return a;
+    }
+
+    inline IDType get_id(const char *sym, size_t len) const {
+        key64 t64 = *(key64*)(sym+8);
+        static const uint64_t masks[] = {
+            0xff,               // 9: 1 byte
+            0xffff,             // 10: 2 bytes
+            0xffffff,           // 11: 3 bytes
+            0xffffffff,         // 12: 4 bytes
+            0xffffffffff,       // 13: 5 bytes
+            0xffffffffffff,     // 14: 6 bytes
+            0xffffffffffffff,   // 15: 7 bytes
+            0xffffffffffffffff  // 16: 8 bytes
+        };
+        t64 &= masks[len - 9];
+        key64 a = (*(key64*)sym);
+        a += t64<<20;
+        return a;
+    }
+   
+    inline ValueType get_value(const char *sym, size_t len) const {
+         IDType id = get_id(sym, len);
+         IDType k = _pext_u64(id, mask);  // 使用Base::_pext_u64而不是get_key
+         int size_mask = keyValue.size() - 1;
+         for (int pos = k;; pos = (pos + 1) & size_mask) {
+            if (keyValue[pos].first == id) {
+                return keyValue[pos].second;
+            } else if (keyValue[pos].first == keyValue.size()) {
+                return ValueType();
+            }
+         }
+         return ValueType();
     }
 };
 
@@ -343,7 +387,7 @@ public:
             IDType id = get_id(p.first.data());
             for(int i = 0; i < allIDs.size(); i++) {
                 if(allIDs[i].first == id) {
-                    printf("error %s %s id: %lx\n", p.first.data(), allIDs[i].second.data(), id);
+                    printf("error %s %s id: %llx\n", p.first.data(), allIDs[i].second.data(), id);
                     exit(0);
                 }
             }
@@ -359,7 +403,7 @@ public:
             bool found = false;
             for(int i = 0; i < allIDs.size(); i++) {
                 if(allIDs[i].first == id && allIDs[i].second != p) {
-                    printf("error id conflict %s %s id: %lx\n", p.data(), allIDs[i].second.data(), id);
+                    printf("error id conflict %s %s id: %llx\n", p.data(), allIDs[i].second.data(), id);
                     exit(0);
                 }
                 if(allIDs[i].first == id && allIDs[i].second == p) {
@@ -411,7 +455,7 @@ public:
         // 当条件为真时，-1 & id = id；当条件为假时，0 & id = 0
     }
     
-    inline IDType get_value(const char *sym) const {
+    inline ValueType get_value(const char *sym) const {
         IDType k = get_key(sym);
         return future[k];
     }
@@ -456,6 +500,16 @@ class combine_symbol_table : public std::unordered_map<KeyType, ValueType> {
             return stock.get_value(sym);
         } else {
             return option.get_value(sym);
+        }
+    }
+
+    ValueType get_value(const char *sym, size_t len) const {
+        if(sym[5]==0||sym[6]==0) {
+          return future.get_value(sym);
+        } else if(sym[6]=='.') {
+            return stock.get_value(sym);
+        } else {
+            return option.get_value(sym, len);
         }
     }
 
