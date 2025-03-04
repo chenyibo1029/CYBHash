@@ -39,20 +39,15 @@ using namespace std;
 #include <cstdint>
 #include <string>
 
-typedef unsigned int key32;
-typedef unsigned short key16;
-typedef unsigned char key8;
+typedef unsigned int DEFAULT_VALUE_TYPE;
 typedef unsigned long long key64;
-typedef unsigned __int128 key128;
-typedef int value32;
 
-typedef key32 VALUE_TYPE;
 typedef key64 IDType;
 
 constexpr const int MAX_BIT_SIZE = 25;
 
 // 基于CRTP的符号表基类
-template<typename Derived, typename KeyType = std::string, typename ValueType = VALUE_TYPE, bool allow_id_conflict = true>
+template<typename Derived, typename KeyType, typename ValueType, bool allow_id_conflict = true, bool no_conflict_in_key = false>
 class base_symbol_table : public std::unordered_map<KeyType, ValueType> {
 public:
     // 使用static_assert确保KeyType只能是string, string_view或char*
@@ -61,18 +56,28 @@ public:
         std::is_same<KeyType, std::string_view>::value,
         "KeyType must be std::string or std::string_view"
     );
+    base_symbol_table() {
+        testEndian();
+        keyValue.resize(1);
+        keyValue[0] = std::pair<IDType, ValueType>{keyValue.size(), ValueType()};
+    }
 
-    base_symbol_table() {}
+    void testEndian() {
+        const char *p = "600000.SSE";
+        key64 id = *(key64*)p;
+        if((id & 0xff) != '6') {
+            cout<<"big endian, unpexpected"<<endl;
+            exit(1);
+        }
+    }
 
-    bool doneModify() {
-        if(this->size() == 0) {
+    bool sync_with_unordered_map() {
+        if (this->size() == 0) {
             mask = 0;
-            keyValue.resize(1);
-            keyValue[0] = std::pair<IDType, ValueType>{keyValue.size(), ValueType()};
             return true;
         }
 
-        if(this->size()>1<<MAX_BIT_SIZE) {
+        if (this->size() > 1 << MAX_BIT_SIZE) {
             cout<<"table size too large, try using template parameter SmallTbl"<<endl;
             return false;
         }
@@ -82,7 +87,7 @@ public:
             if(find(ids.begin(), ids.end(), id) != ids.end()) {
                 for(auto &q : *this) {
                     if(static_cast<Derived*>(this)->get_id(q.first.data()) == id) {
-                        printf("error %s %s id: %llx\n", q.first.data(), p.first.data(), id);
+                        printf("error %s %s id: %x\n", q.first.data(), p.first.data(), id);
                         exit(0);
                     }
                 }
@@ -99,8 +104,7 @@ public:
             keyValue[i] = std::pair<IDType, ValueType>{keyValue.size(), ValueType()};
         }
         
-        // 填充查找表
-        static_cast<Derived*>(this)->fill_table();
+        fill_table();
         return true;
     }
 
@@ -173,6 +177,9 @@ public:
         vector<IDType> se;
         for(auto id : ids) {
             IDType p = _pext_u64(id, new_mask);
+            if(p==0) {
+                return false;
+            }
             if(find(se.begin(), se.end(), p) != se.end()) {
                 return false;
             }
@@ -191,7 +198,7 @@ public:
     
     inline ValueType get_value(const char *sym) const {
         if(!static_cast<const Derived*>(this)->should_process(sym)) {
-            return 0;
+            return ValueType{};
         }
 
         if(allow_id_conflict) {
@@ -203,7 +210,7 @@ public:
                 if (keyValue[pos].first == id) {
                     return keyValue[pos].second;
                 } else if (keyValue[pos].first == keyValue.size()) {
-                    return ValueType();
+                    return ValueType{};
                 }
             }
         } else {
@@ -213,7 +220,7 @@ public:
                 return keyValue[k].second;
             }
         }
-        return ValueType();
+        return ValueType{};
     }
 
     inline IDType get_key(const char *sym) const {
@@ -226,15 +233,10 @@ public:
         return find_min_mask_by_cost(ids, allow_id_conflict);
     }
     
-    // 默认的fill_table实现，派生类可以重写
     void fill_table() {
         for(auto &p : *this) {
             IDType id = static_cast<Derived*>(this)->get_id(p.first.data());
             IDType k = get_key(p.first.data());
-            
-            if(k >= keyValue.size()) {
-                //cout << p.first << " id: " << id << " error k: " << k << " size: " << keyValue.size() << endl;
-            }
             
             int size_mask = keyValue.size() - 1;  
             for(int pos = k;; pos = (pos+1) & size_mask) {
@@ -252,11 +254,11 @@ public:
     }
     
 protected:
-    std::vector<std::pair<IDType, ValueType>> keyValue;
+    std::vector<std::pair<IDType, ValueType>> keyValue = {std::pair<IDType, ValueType>{1, ValueType{}}};
     IDType mask = 0;
 };
 
-template<typename KeyType = std::string, typename ValueType = VALUE_TYPE>
+template<typename KeyType = std::string, typename ValueType = DEFAULT_VALUE_TYPE>
 class option_symbol_table : public base_symbol_table<option_symbol_table<KeyType, ValueType>, KeyType, ValueType> {
 public:
     static constexpr const char* table_name = "option";
@@ -324,8 +326,8 @@ public:
     }
 };
 
-template<typename KeyType = std::string, typename ValueType = VALUE_TYPE, bool allow_id_conflict = true>
-class stock_symbol_table : public base_symbol_table<stock_symbol_table<KeyType, ValueType, allow_id_conflict>> {
+template<typename KeyType = std::string, typename ValueType = DEFAULT_VALUE_TYPE, bool allow_id_conflict = true>
+class stock_symbol_table : public base_symbol_table<stock_symbol_table<KeyType, ValueType, allow_id_conflict>, KeyType, ValueType> {
 public:
     static constexpr const char* table_name = "stock";
     static_assert(std::is_same<KeyType, std::string>::value || 
@@ -338,12 +340,19 @@ public:
         id += sym[8]<<4; // 600000.SSE, 000001.SZE, exchange code is at 8th position
         return id;
     }
+
+    inline IDType get_id(const char *sym, const char *exchange) const {
+        key64 id = *(key64*)sym;
+        id &= 0xffffffffffff;
+        id += exchange[1]<<4; // exchange "SSE" or "SZE"
+        return id;
+    }
 };
 
-template<typename KeyType = std::string, typename ValueType = VALUE_TYPE, bool allow_id_conflict = false>
-class future_symbol_table : public base_symbol_table<future_symbol_table<KeyType, ValueType, allow_id_conflict>> {
+template<typename KeyType = std::string, typename ValueType = DEFAULT_VALUE_TYPE, bool allow_id_conflict = false>
+class future_symbol_table : public base_symbol_table<future_symbol_table<KeyType, ValueType, allow_id_conflict>, KeyType, ValueType> {
 public:
-    using Base = base_symbol_table<future_symbol_table<KeyType, ValueType, allow_id_conflict>>;
+    using Base = base_symbol_table<future_symbol_table<KeyType, ValueType, allow_id_conflict>, KeyType, ValueType>;
     using Base::find_min_mask_by_cost;
     static constexpr const char* table_name = "future";
     static_assert(std::is_same<KeyType, std::string>::value || 
@@ -362,24 +371,24 @@ public:
 };
         
 
-template<typename KeyType = std::string, typename ValueType = VALUE_TYPE>
-class future_no_conflict_symbol_table : public base_symbol_table<future_no_conflict_symbol_table<KeyType, ValueType>> {
+template<typename KeyType = std::string, typename ValueType = DEFAULT_VALUE_TYPE>
+class future_no_conflict_symbol_table : public base_symbol_table<future_no_conflict_symbol_table<KeyType, ValueType>, KeyType, ValueType> {
 public:
-    using Base = base_symbol_table<future_no_conflict_symbol_table<KeyType, ValueType>>;
+    using Base = base_symbol_table<future_no_conflict_symbol_table<KeyType, ValueType>, KeyType, ValueType>;
     using Base::mask;
     using Base::get_key;
     using Base::find_min_mask_by_cost;
     
     static constexpr const char* table_name = "future";
 
-    void doneModify() {
+    void sync_with_unordered_map() {
        // This method should not be called for future_no_conflict_symbol_table, is not safe
        // Use modify_with_all_symbols instead, should confirm know all symbols will be used
-       static_assert(false, "doneModify() should not be called for future_no_conflict_symbol_table. "
-                            "Use modify_with_all_symbols() instead.");
+       static_assert(false, "sync_with_unordered_map() should not be called for future_no_conflict_symbol_table, it's not safe. "
+                            "Use sync_with_additional_symbols() instead.");
     }
     
-    bool modify_with_all_symbols(const vector<KeyType>& all_symbols) {
+    bool sync_with_additional_symbols(const vector<KeyType>& all_symbols) {
         vector<std::pair<IDType, KeyType>> allIDs;
         vector<IDType> ids;
         
@@ -432,7 +441,7 @@ public:
         future_size = 1 << __builtin_popcountll(mask);
         
         for(int i = 0; i < future_size; i++) {
-            future[i] = {};
+            future[i] = ValueType{};
         }
         
         //cout << "future ids size: " << ids.size() << " mask: " << mask << " " 
@@ -465,7 +474,7 @@ private:
     int future_size = 0;
 };
 
-template<typename KeyType = std::string, typename ValueType = VALUE_TYPE>
+template<typename KeyType = std::string, typename ValueType = DEFAULT_VALUE_TYPE>
 class combine_symbol_table : public std::unordered_map<KeyType, ValueType> {
   public:
     static constexpr const char* table_name = "combine";
@@ -476,7 +485,7 @@ class combine_symbol_table : public std::unordered_map<KeyType, ValueType> {
     combine_symbol_table() {
     }
 
-    bool doneModify() {
+    bool sync_with_unordered_map() {
          stock.clear();
          future.clear();
          option.clear();
@@ -490,10 +499,10 @@ class combine_symbol_table : public std::unordered_map<KeyType, ValueType> {
                 option[sym.data()] = p.second;
             }
          }
-         return stock.doneModify() && future.doneModify() && option.doneModify();
+         return stock.sync_with_unordered_map() && future.sync_with_unordered_map() && option.sync_with_unordered_map();
     }
 
-    value32 get_value(const char *sym) const {
+    ValueType get_value(const char *sym) const {
         if(sym[5]==0||sym[6]==0) {
           return future.get_value(sym);
         } else if(sym[6]=='.') {
@@ -506,7 +515,7 @@ class combine_symbol_table : public std::unordered_map<KeyType, ValueType> {
     ValueType get_value(const char *sym, size_t len) const {
         if(sym[5]==0||sym[6]==0) {
           return future.get_value(sym);
-        } else if(sym[6]=='.') {
+        } else if(sym[6]=='.') { //600000.SSE, 000001.SZE
             return stock.get_value(sym);
         } else {
             return option.get_value(sym, len);

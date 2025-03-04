@@ -30,6 +30,7 @@ long long int loop = 1000;
 typedef std::string KeyType;
 std::vector<KeyType> tbl_data;  // 订阅的合约
 std::vector<KeyType> find_data; // 行情数据
+typedef unsigned int key32;
 typedef key32 VALUE_TYPE;
 typedef key64 IDType;
 typedef Str<STR_LEN> Key;
@@ -194,7 +195,7 @@ void bench_combine_symbol_table() {
     for (int i = 0; i < tbl_data.size(); i++) {
         combine_table[tbl_data[i]] = i + 1;
     }
-    if(!combine_table.doneModify()) {
+    if(!combine_table.sync_with_unordered_map()) {
         cout<<"table size too large"<<endl;
         return;
     }
@@ -218,7 +219,7 @@ void bench_future_symbol_table() {
         future_table[tbl_data[i]] = i + 1;
     }
 
-    if(!future_table.doneModify()) {
+    if(!future_table.sync_with_unordered_map()) {
         cout<<"table size too large"<<endl;
         return;
     }
@@ -243,7 +244,7 @@ void bench_future_symbol_table() {
     for (int i = 0; i < tbl_data.size(); i++) {
         future_no_conflict_table[tbl_data[i]] = i + 1;
     }
-    if(!future_no_conflict_table.modify_with_all_symbols(find_data)) {
+    if(!future_no_conflict_table.sync_with_additional_symbols(find_data)) {
         cout<<"table size too large"<<endl;
         return;
     }
@@ -266,7 +267,7 @@ void bench_stock_symbol_table() {
         stock_table[tbl_data[i]] = i + 1;
     }
 
-    if(!stock_table.doneModify()) {
+    if(!stock_table.sync_with_unordered_map()) {
         cout<<"table size too large"<<endl;
         return;
     }
