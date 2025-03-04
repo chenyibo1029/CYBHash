@@ -439,11 +439,11 @@ class combine_symbol_table : public std::unordered_map<KeyType, ValueType> {
          for(auto &p : *this) {
             KeyType sym = p.first;
             if(sym.size() == 5 || sym.size() == 6) {
-                future[sym] = p.second;
+                future[sym.data()] = p.second;
             } else if(sym[6]=='.') { //600000.SSE, 000001.SZE
-                stock[sym] = p.second;
+                stock[sym.data()] = p.second;
             } else {
-                option[sym] = p.second;
+                option[sym.data()] = p.second;
             }
          }
          return stock.doneModify() && future.doneModify() && option.doneModify();
