@@ -3,11 +3,13 @@
 g++ -std=c++17 -mbmi2 -O3 -DNDEBUG testCYBHash.cc -o cyb_hash
 
 if [ $? -eq 0 ]; then
-  echo "Compilation successful, running test..."
+  echo " running future test..."
   ./cyb_hash
-  echo "\n running stock test..."
+  echo ''
+  echo " running stock test..."
   ./cyb_hash stock.txt stock.txt stock
-  echo "\n running combine test..."
+  echo ''
+  echo " running combine test..."
   ./cyb_hash combine.txt combine.txt combine
   rm cyb_hash
 else

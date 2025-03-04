@@ -150,7 +150,7 @@ void bench_with_file_data() {
         return;
     }
 
-    std::cout << "\n--- Benchmarking with data from file ---" << std::endl;
+    std::cout << "--- Benchmarking with data from file ---" << std::endl;
     std::cout << "Symbol count: " << tbl_data.size() << ", Query count: " << find_data.size() << std::endl;
 
     // 运行各种算法的基准测试
@@ -166,7 +166,6 @@ template<uint32_t HashFunc>
 void bench_hash() {
   StrHash<STR_LEN, Value, 0, HashFunc, true> ht;
   for (int i = 0; i < tbl_data.size(); i++) {
-    //cout<<tbl_data[i]<<endl;
     ht.emplace(tbl_data[i].data(), i + 1);
   }
   if (!ht.doneModify()) {
@@ -314,8 +313,6 @@ void bench_option_symbol_table() {
 
 int main(int argc, char **argv) {
     // 运行硬编码数据的性能基准测试
-    std::cout << "\n--- Benchmarking  ---" << std::endl;
-
     // 如果有命令行参数指定数据文件，则从文件读取数据
     std::string datafile = "shfe.txt"; // 默认使用 shfe.txt
     std::string testfile = "shfe.txt"; // 默认使用同一个文件进行测试
