@@ -289,24 +289,24 @@ private:
             /*
                       */
             if (best_cost == min_cost) {
-             std::cout << "find min hash: best_cost: " << best_cost << " cost: " << best_cost - min_cost << " best_pos_len: " << best_pos_len
-                    << " best_mask: " << best_mask << " min_cost: " << min_cost
-                      << std::endl;
+             //std::cout << "find min hash: best_cost: " << best_cost << " cost: " << best_cost - min_cost << " best_pos_len: " << best_pos_len
+                    //<< " best_mask: " << best_mask << " min_cost: " << min_cost
+                      //<< std::endl;
               return;
             }
           }
         }
         if (best_cost <= good_cost){
-          std::cout << "find good hash: best_cost: " << best_cost << " cost: " << best_cost - min_cost << " best_pos_len: " << best_pos_len
-                    << " best_mask: " << best_mask << " min_cost: " << min_cost
-                    << std::endl;
+          //std::cout << "find good hash: best_cost: " << best_cost << " cost: " << best_cost - min_cost << " best_pos_len: " << best_pos_len
+                    //<< " best_mask: " << best_mask << " min_cost: " << min_cost
+                      //<< std::endl;
           goto done;
         }
       }
     }
-          std::cout << "end hash: best_cost: " << best_cost << " cost: " << best_cost - min_cost << " best_pos_len: " << best_pos_len
-                    << " best_mask: " << best_mask << " min_cost: " << min_cost
-                    << std::endl;
+          //std::cout << "end hash: best_cost: " << best_cost << " cost: " << best_cost - min_cost << " best_pos_len: " << best_pos_len
+                    //<< " best_mask: " << best_mask << " min_cost: " << min_cost
+                      //<< std::endl;
           goto done;
   done:
     hash_salt = best_salt;

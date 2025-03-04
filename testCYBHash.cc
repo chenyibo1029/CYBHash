@@ -26,7 +26,7 @@ SOFTWARE.
 
 // 用于文件数据的全局变量
 const int STR_LEN = 16;
-int loop = 10;                      
+long long int loop = 1000;                      
 std::vector<std::string> tbl_data;  // 订阅的合约
 std::vector<std::string> find_data; // 行情数据
 typedef key32 VALUE_TYPE;
@@ -291,12 +291,8 @@ void bench_stock_symbol_table() {
 }
 
 int main(int argc, char **argv) {
-    // 验证MPH工作正确
-    // test_mph_lookup();
-    // test_mph_find();
-
     // 运行硬编码数据的性能基准测试
-    std::cout << "\n--- Benchmarking with hardcoded data ---" << std::endl;
+    std::cout << "\n--- Benchmarking  ---" << std::endl;
 
     // 如果有命令行参数指定数据文件，则从文件读取数据
     std::string datafile = "shfe.txt"; // 默认使用 shfe.txt
@@ -306,17 +302,22 @@ int main(int argc, char **argv) {
         if (argc > 2) {
             testfile = argv[2];
         }
+        // 尝试加载文件数据
+        load_data_from_file(datafile, testfile);
+        while(loop>5 && loop*find_data.size()>100000000){
+            loop /= 2;
+        }
         if (argc > 3) {
             mode = argv[3];
         }
         if (argc > 4) {
             loop = atoi(argv[4]);
         }
+    } else {
+        load_data_from_file(datafile, testfile);
     }
-    std::cout << "file: " << datafile << " mode: " << mode << " loop: " << loop << std::endl;
+    std::cout << "subscribe: " << datafile << " query: " << testfile << " mode: " << mode << " loop: " << loop << std::endl;
 
-    // 尝试加载文件数据
-    load_data_from_file(datafile, testfile);
 
     // 运行各种基准测试
     bench_hash<1>();
@@ -332,7 +333,6 @@ int main(int argc, char **argv) {
     } else {
         bench_china_symbol_table();
     }
-    // bench_mph_hardcoded();
     bench_file_unordered_map();
 
     return 0;

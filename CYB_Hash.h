@@ -50,7 +50,7 @@ typedef key32 VALUE_TYPE;
 typedef key64 IDType;
 
 // 基于CRTP的符号表基类
-template<typename Derived, typename KeyType = std::string, typename ValueType = VALUE_TYPE>
+template<typename Derived, typename KeyType = std::string, typename ValueType = VALUE_TYPE, bool allow_id_conflict = true>
 class base_symbol_table : public std::unordered_map<KeyType, ValueType> {
 public:
     // 使用static_assert确保KeyType只能是string, string_view或char*
@@ -95,6 +95,12 @@ public:
     }
 
     IDType find_min_mask_by_cost(const vector<IDType> &ids, bool allow_conflict) {
+        if(!allow_id_conflict) {
+            if(allow_conflict) {
+                cout<<"the mode should be allow_id_conflict = false"<<endl;
+                exit(0);
+            } 
+        }
         IDType mask = 0; // 初始掩码为0（不选择任何位）
         std::map<IDType, std::pair<IDType, int>> hash_values;
         //cout << "ids.size() " << ids.size() << endl;
@@ -164,44 +170,41 @@ public:
         return true;
     }
     
-    IDType find_min_mask_high_to_low(const vector<IDType>& ids) {
-        IDType mask = ~static_cast<IDType>(0);
-        for(int i = sizeof(IDType)*8-1; i >= 0; i--) {
-            IDType new_mask = mask & (~((((IDType)1) << i)));
-            if(check_mask(new_mask, ids)) {
-                mask = new_mask;
-            }
-        }
-        return mask;
-    }
-    
     inline ValueType get_value(const char *sym) const {
         if(!static_cast<const Derived*>(this)->should_process(sym)) {
             return 0;
         }
-        
-        IDType id = static_cast<const Derived*>(this)->get_id(sym);
-        IDType k = static_cast<const Derived*>(this)->get_key(sym);
-        int size_mask = keyValue.size() - 1;
-        
-        for(int pos = k;; pos = (pos+1) & size_mask) {
-            if(keyValue[pos].first == id) { 
-                return keyValue[pos].second;
-            } else if(keyValue[pos].first == keyValue.size()) {
-                return ValueType();
+
+        if(allow_id_conflict) {
+            IDType id = static_cast<const Derived *>(this)->get_id(sym);
+            IDType k = static_cast<const Derived *>(this)->get_key(sym);
+            int size_mask = keyValue.size() - 1;
+
+            for (int pos = k;; pos = (pos + 1) & size_mask) {
+                if (keyValue[pos].first == id) {
+                    return keyValue[pos].second;
+                } else if (keyValue[pos].first == keyValue.size()) {
+                    return ValueType();
+                }
+            }
+        } else {
+            IDType id = static_cast<const Derived *>(this)->get_id(sym);
+            IDType k = static_cast<const Derived *>(this)->get_key(sym);
+            if (keyValue[k].first == id) {
+                return keyValue[k].second;
             }
         }
         return ValueType();
     }
-    
+
     inline IDType get_key(const char *sym) const {
-        IDType id = static_cast<const Derived*>(this)->get_id(sym);
+        IDType id = static_cast<const Derived *>(this)->get_id(sym);
         return _pext_u64(id, mask);
     }
-    
+
     // 默认的calculate_mask实现，派生类可以重写
     IDType calculate_mask(const vector<IDType>& ids) {
-        return find_min_mask_by_cost(ids, true);
+        return find_min_mask_by_cost(ids, allow_id_conflict);
     }
     
     // 默认的fill_table实现，派生类可以重写
@@ -266,32 +269,37 @@ public:
     }
 };
 
-template<typename KeyType = std::string, typename ValueType = VALUE_TYPE>
-class stock_symbol_table : public base_symbol_table<stock_symbol_table<KeyType, ValueType>> {
+template<typename KeyType = std::string, typename ValueType = VALUE_TYPE, bool allow_id_conflict = true>
+class stock_symbol_table : public base_symbol_table<stock_symbol_table<KeyType, ValueType, allow_id_conflict>> {
 public:
     static constexpr const char* table_name = "stock";
     static_assert(std::is_same<KeyType, std::string>::value || 
                  std::is_same<KeyType, std::string_view>::value,
                  "KeyType must be std::string or std::string_view");
-    inline bool should_process(const char *sym) const {
-        return sym[6] == '.';
-    }
     
     inline IDType get_id(const char *sym) const {
         key64 id = *(key64*)sym;
         id &= 0xffffffffffff;
-        id += sym[8]<<4;
+        id += sym[8]<<4; // 600000.SSE, 000001.SZE, exchange code is at 8th position
         return id;
     }
 };
 
-template<typename KeyType = std::string, typename ValueType = VALUE_TYPE>
-class future_symbol_table : public base_symbol_table<future_symbol_table<KeyType, ValueType>> {
+template<typename KeyType = std::string, typename ValueType = VALUE_TYPE, bool allow_id_conflict = false>
+class future_symbol_table : public base_symbol_table<future_symbol_table<KeyType, ValueType, allow_id_conflict>> {
 public:
+    using Base = base_symbol_table<future_symbol_table<KeyType, ValueType, allow_id_conflict>>;
+    using Base::find_min_mask_by_cost;
     static constexpr const char* table_name = "future";
     static_assert(std::is_same<KeyType, std::string>::value || 
                  std::is_same<KeyType, std::string_view>::value,
                  "KeyType must be std::string or std::string_view");
+    
+    //do not allow id conflict
+    IDType calculate_mask(const vector<IDType>& ids) {
+        return find_min_mask_by_cost(ids, false);
+    }
+
     inline IDType get_id(const char *sym) const {
         key64 id = *(uint64_t*)sym & 0xffffffffffff;
         return id & (-(sym[5] == 0 || sym[6] == 0));
@@ -370,10 +378,6 @@ public:
         }
     }
     
-    bool should_process(const char *sym) const {
-        return sym[5] == 0 || sym[6] == 0;
-    }
-    
     inline IDType get_id(const char *sym) const {
         // 直接读取前6个字节作为ID，避免掩码操作
         // 使用位移操作代替乘法，编译器会优化成条件移动指令
@@ -399,18 +403,12 @@ class china_symbol_table {
     china_symbol_table() {
     }
     china_symbol_table(const std::unordered_map<std::string, VALUE_TYPE>& symbols, const vector<std::string>& find_data) {
-         std::unordered_map<std::string, VALUE_TYPE> future5_map;
-         std::unordered_map<std::string, VALUE_TYPE> future6_map;
          std::unordered_map<std::string, VALUE_TYPE> future_map;
          std::unordered_map<std::string, VALUE_TYPE> stock_map;
          std::unordered_map<std::string, VALUE_TYPE> option_map;
          for(auto &p : symbols) {
             std::string sym = p.first;
-            if(sym.size() == 5) {
-                future5_map[sym] = p.second;
-                future_map[sym] = p.second;
-            } else if(sym.size() == 6) {
-                future6_map[sym] = p.second;
+            if(sym.size() == 5 || sym.size() == 6) {
                 future_map[sym] = p.second;
             } else if(sym[6]=='.') { //600000.SSE, 000001.SZE
                 stock_map[sym] = p.second;
@@ -419,8 +417,7 @@ class china_symbol_table {
             }
          }
          stock.init(stock_map);
-         //future.init(future_map);
-         future.init_with_all_symbols(future_map, find_data);
+         future.init(future_map);
          option.init(option_map);
     }
 
@@ -436,8 +433,8 @@ class china_symbol_table {
 
 private:
      stock_symbol_table<> stock;
-     //future__symbol_table<> future;
-     future_no_conflict_symbol_table<> future;
+     future_symbol_table<> future;
+     //future_no_conflict_symbol_table<> future_no_conflict;
      option_symbol_table<> option;
 };
 
