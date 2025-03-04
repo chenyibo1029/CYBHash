@@ -27,8 +27,9 @@ SOFTWARE.
 // 用于文件数据的全局变量
 const int STR_LEN = 16;
 long long int loop = 1000;                      
-std::vector<std::string> tbl_data;  // 订阅的合约
-std::vector<std::string> find_data; // 行情数据
+typedef std::string KeyType;
+std::vector<KeyType> tbl_data;  // 订阅的合约
+std::vector<KeyType> find_data; // 行情数据
 typedef key32 VALUE_TYPE;
 typedef key64 IDType;
 typedef Str<STR_LEN> Key;
@@ -43,7 +44,7 @@ bool check_sym(const string &s) {
     if (s.empty() || s[0] == '#') {
         return false;
     }
-    if (mode == "all") {
+    if (mode == "combine") {
         return true;
     }
     if (s.length() <= 6) {
@@ -109,7 +110,7 @@ bool load_data_from_file(const std::string &filename, const std::string tFile) {
 // 使用文件数据测试unordered_map
 void bench_file_unordered_map() {
     // 创建标准映射用于查找
-    std::unordered_map<std::string, uint16_t> map;
+    std::unordered_map<KeyType, uint16_t> map;
     for (size_t i = 0; i < tbl_data.size(); i++) {
         map[tbl_data[i]] = i + 1;
     }
@@ -158,11 +159,9 @@ void bench_with_file_data() {
 template<uint32_t HashFunc>
 void bench_hash() {
   StrHash<STR_LEN, Value, 0, HashFunc, true> ht;
-  std::unordered_map<string, Value> ma;
   for (int i = 0; i < tbl_data.size(); i++) {
     //cout<<tbl_data[i]<<endl;
     ht.emplace(tbl_data[i].data(), i + 1);
-    ma[tbl_data[i]] = i + 1;
   }
   if (!ht.doneModify()) {
     cout << "table size too large, try using template parameter SmallTbl=false" << endl;
@@ -190,40 +189,39 @@ void bench_hash() {
 }
 
 
-void bench_china_symbol_table() {
-    std::unordered_map<std::string, VALUE_TYPE> symbols;
+void bench_combine_symbol_table() {
+    combine_symbol_table<std::string, VALUE_TYPE> combine_table;
     for (int i = 0; i < tbl_data.size(); i++) {
-        symbols[tbl_data[i]] = i + 1;
+        combine_table[tbl_data[i]] = i + 1;
+    }
+    if(!combine_table.doneModify()) {
+        cout<<"table size too large"<<endl;
+        return;
     }
 
-    china_symbol_table table(symbols, find_data);
     uint64_t sum = 0;
     auto before = getns();
     for (int l = 0; l < loop; l++) {
         for (auto &s : find_data) {
-            // int result = table.get_value(s.data());
-            // if( (symbols.find(s)==symbols.end() && result!=0) || (symbols.find(s)!=symbols.end() && symbols[s] !=
-            // result) ) {
-            //   cout<<"error "<<s<<" "<<symbols[s]<<" "<<result<<endl;
-            // }
-            sum += table.get_value(s.data());
+            sum += combine_table.get_value(s.data());
         }
     }
     auto after = getns();
     double avg_ns = static_cast<double>(after - before) / (loop * find_data.size());
-    cout << "china_symbol_table sum: " << sum << " avg lat: " << avg_ns << " ns per lookup " << (1000000000.0 / avg_ns)
+    cout << "combine_symbol_table sum: " << sum << " avg lat: " << avg_ns << " ns per lookup " << (1000000000.0 / avg_ns)
          << " lookups/sec" << endl;
 }
 
 void bench_future_symbol_table() {
-    future_symbol_table<std::string, VALUE_TYPE> table;
+    future_symbol_table<std::string, VALUE_TYPE> future_table;
     for (int i = 0; i < tbl_data.size(); i++) {
-        table[tbl_data[i]] = i + 1;
+        future_table[tbl_data[i]] = i + 1;
     }
 
-    // future_symbol_table *table = (future_symbol_table*)QTG_MemUtils::allocLifeTime(sizeof(future_symbol_table));
-    // table = new (table) future_symbol_table();
-    table.intFromSelf();
+    if(!future_table.doneModify()) {
+        cout<<"table size too large"<<endl;
+        return;
+    }
     uint64_t sum = 0;
     auto before = getns();
     for (int l = 0; l < loop; l++) {
@@ -233,7 +231,7 @@ void bench_future_symbol_table() {
             // result) ) {
             //   cout<<"error "<<s<<" "<<symbols[s]<<" "<<result<<endl;
             // }
-            sum += table.get_value(s.data());
+            sum += future_table.get_value(s.data());
         }
     }
     auto after = getns();
@@ -241,22 +239,19 @@ void bench_future_symbol_table() {
     cout << "future_symbol_table sum: " << sum << " avg lat: " << avg_ns << " ns per lookup " << (1000000000.0 / avg_ns)
          << " lookups/sec" << endl;
 
-    future_no_conflict_symbol_table<std::string, VALUE_TYPE> no_conflict_table;
-    std::unordered_map<std::string, VALUE_TYPE> table_map;
-    for (const auto &p : table) {
-        table_map[p.first] = p.second;
+    future_no_conflict_symbol_table<std::string, VALUE_TYPE> future_no_conflict_table;
+    for (int i = 0; i < tbl_data.size(); i++) {
+        future_no_conflict_table[tbl_data[i]] = i + 1;
     }
-    no_conflict_table.init_with_all_symbols(table_map, find_data);
+    if(!future_no_conflict_table.modify_with_all_symbols(find_data)) {
+        cout<<"table size too large"<<endl;
+        return;
+    }
     uint64_t sum2 = 0;
     auto before2 = getns();
     for (int l = 0; l < loop; l++) {
         for (auto &s : find_data) {
-            // int result = table.get_value(s.data());
-            // if( (symbols.find(s)==symbols.end() && result!=0) || (symbols.find(s)!=symbols.end() && symbols[s] !=
-            // result) ) {
-            //   cout<<"error "<<s<<" "<<symbols[s]<<" "<<result<<endl;
-            // }
-            sum2 += no_conflict_table.get_value(s.data());
+            sum2 += future_no_conflict_table.get_value(s.data());
         }
     }
     auto after2 = getns();
@@ -266,12 +261,15 @@ void bench_future_symbol_table() {
 }
 
 void bench_stock_symbol_table() {
-    stock_symbol_table<std::string, VALUE_TYPE> table;
+    stock_symbol_table<std::string, VALUE_TYPE> stock_table;
     for (int i = 0; i < tbl_data.size(); i++) {
-        table[tbl_data[i]] = i + 1;
+        stock_table[tbl_data[i]] = i + 1;
     }
 
-    table.init(table);
+    if(!stock_table.doneModify()) {
+        cout<<"table size too large"<<endl;
+        return;
+    }
     uint64_t sum = 0;
     auto before = getns();
     for (int l = 0; l < loop; l++) {
@@ -281,7 +279,7 @@ void bench_stock_symbol_table() {
             // result) ) {
             //   cout<<"error "<<s<<" "<<symbols[s]<<" "<<result<<endl;
             // }
-            sum += table.get_value(s.data());
+            sum += stock_table.get_value(s.data());
         }
     }
     auto after = getns();
@@ -302,13 +300,13 @@ int main(int argc, char **argv) {
         if (argc > 2) {
             testfile = argv[2];
         }
+        if (argc > 3) {
+            mode = argv[3];
+        }
         // 尝试加载文件数据
         load_data_from_file(datafile, testfile);
         while(loop>5 && loop*find_data.size()>100000000){
             loop /= 2;
-        }
-        if (argc > 3) {
-            mode = argv[3];
         }
         if (argc > 4) {
             loop = atoi(argv[4]);
@@ -331,7 +329,7 @@ int main(int argc, char **argv) {
     } else if (mode == "stock") {
         bench_stock_symbol_table();
     } else {
-        bench_china_symbol_table();
+        bench_combine_symbol_table();
     }
     bench_file_unordered_map();
 

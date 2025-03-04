@@ -49,6 +49,8 @@ typedef int value32;
 typedef key32 VALUE_TYPE;
 typedef key64 IDType;
 
+constexpr const int MAX_BIT_SIZE = 25;
+
 // 基于CRTP的符号表基类
 template<typename Derived, typename KeyType = std::string, typename ValueType = VALUE_TYPE, bool allow_id_conflict = true>
 class base_symbol_table : public std::unordered_map<KeyType, ValueType> {
@@ -62,16 +64,16 @@ public:
 
     base_symbol_table() {}
 
-    void intFromSelf() {
-        init(*this);
-    }
-
-    void init(const std::unordered_map<KeyType, ValueType>& symbols) {
+    bool doneModify() {
+        if(this->size()>1<<MAX_BIT_SIZE) {
+            cout<<"table size too large, try using template parameter SmallTbl"<<endl;
+            return false;
+        }
         vector<IDType> ids;
-        for(auto &p : symbols) {
+        for(auto &p : *this) {
             IDType id = static_cast<Derived*>(this)->get_id(p.first.data());
             if(find(ids.begin(), ids.end(), id) != ids.end()) {
-                for(auto &q : symbols) {
+                for(auto &q : *this) {
                     if(static_cast<Derived*>(this)->get_id(q.first.data()) == id) {
                         printf("error %s %s id: %lx\n", q.first.data(), p.first.data(), id);
                         exit(0);
@@ -91,9 +93,11 @@ public:
         }
         
         // 填充查找表
-        static_cast<Derived*>(this)->fill_table(symbols);
+        static_cast<Derived*>(this)->fill_table();
+        return true;
     }
 
+    //try to find a mask that minimizes the number of collisions
     IDType find_min_mask_by_cost(const vector<IDType> &ids, bool allow_conflict) {
         if(!allow_id_conflict) {
             if(allow_conflict) {
@@ -149,7 +153,7 @@ public:
                 ((key64)1 << __builtin_popcountll(mask)) >= ids.size() * 1.5) {
                 //printf("find mask by cost %lx %d, min_cost %lld ids.size() %d\n", mask, __builtin_popcountll(mask), min_cost, ids.size());
                 return mask;
-            } else if (allow_conflict && __builtin_popcountll(mask) >= 25) {
+            } else if (allow_conflict && __builtin_popcountll(mask) >= MAX_BIT_SIZE) {
                 //  printf("mask too large %lx %d, min_cost %lld ids.size() %d\n", mask, __builtin_popcountll(mask), min_cost, ids.size());
                 return mask;
             }
@@ -168,6 +172,13 @@ public:
             se.push_back(p);
         }
         return true;
+    }
+
+    inline ValueType get_no_key_conflict_value(const char *sym) const {
+        //in some case, all symbols can be perfectly mapped to a single key
+        // we can return the value directly
+        IDType k = static_cast<const Derived *>(this)->get_key(sym);
+        return keyValue[k].second;
     }
     
     inline ValueType get_value(const char *sym) const {
@@ -208,8 +219,8 @@ public:
     }
     
     // 默认的fill_table实现，派生类可以重写
-    void fill_table(const std::unordered_map<std::string, ValueType>& symbols) {
-        for(auto &p : symbols) {
+    void fill_table() {
+        for(auto &p : *this) {
             IDType id = static_cast<Derived*>(this)->get_id(p.first.data());
             IDType k = get_key(p.first.data());
             
@@ -234,7 +245,7 @@ public:
     
 protected:
     std::vector<std::pair<IDType, ValueType>> keyValue;
-    IDType mask;
+    IDType mask = 0;
 };
 
 template<typename KeyType = std::string, typename ValueType = VALUE_TYPE>
@@ -316,12 +327,19 @@ public:
     using Base::find_min_mask_by_cost;
     
     static constexpr const char* table_name = "future";
+
+    void doneModify() {
+       // This method should not be called for future_no_conflict_symbol_table, is not safe
+       // Use modify_with_all_symbols instead, should confirm know all symbols will be used
+       static_assert(false, "doneModify() should not be called for future_no_conflict_symbol_table. "
+                            "Use modify_with_all_symbols() instead.");
+    }
     
-    void init_with_all_symbols(const std::unordered_map<KeyType, ValueType>& symbols, const vector<std::string>& all_symbols) {
-        vector<std::pair<IDType, string>> allIDs;
+    bool modify_with_all_symbols(const vector<KeyType>& all_symbols) {
+        vector<std::pair<IDType, KeyType>> allIDs;
         vector<IDType> ids;
         
-        for(auto &p : symbols) {
+        for(auto &p : *this) {
             IDType id = get_id(p.first.data());
             for(int i = 0; i < allIDs.size(); i++) {
                 if(allIDs[i].first == id) {
@@ -330,7 +348,7 @@ public:
                 }
             }
             ids.push_back(id);
-            allIDs.push_back(std::pair<IDType, string>{id, p.first});
+            allIDs.push_back(std::pair<IDType, KeyType>{id, p.first});
         }
         
         for(auto &p : all_symbols) {
@@ -341,7 +359,7 @@ public:
             bool found = false;
             for(int i = 0; i < allIDs.size(); i++) {
                 if(allIDs[i].first == id && allIDs[i].second != p) {
-                    printf("error %s %s id: %lx\n", p.data(), allIDs[i].second.data(), id);
+                    printf("error id conflict %s %s id: %lx\n", p.data(), allIDs[i].second.data(), id);
                     exit(0);
                 }
                 if(allIDs[i].first == id && allIDs[i].second == p) {
@@ -349,13 +367,18 @@ public:
                 }
             }
             if(!found) {
-                allIDs.push_back(std::pair<IDType, string>{id, p});
+                allIDs.push_back(std::pair<IDType, KeyType>{id, p});
             }
         }
         
         vector<IDType> all_ids;
         for(auto &p : allIDs) {
             all_ids.push_back(p.first);
+        }
+
+        if(all_ids.size()>=1<<MAX_BIT_SIZE) {
+            cout<<"future_no_conflict_symbol_table size too large, max size is"<<(1<<MAX_BIT_SIZE)<<endl;
+            return false;
         }
         
         // 使用所有ID计算掩码，不允许冲突
@@ -371,11 +394,12 @@ public:
         //cout << "future ids size: " << ids.size() << " mask: " << mask << " " 
              //<< __builtin_popcountll(mask) << " future size: " << future_size << endl;
              
-        for(auto &p : symbols) {
+        for(auto &p : *this) {
             IDType id = get_id(p.first.data());
             IDType k = get_key(p.first.data());
             future[k] = p.second;
         }
+        return true;
     }
     
     inline IDType get_id(const char *sym) const {
@@ -397,28 +421,32 @@ private:
     int future_size = 0;
 };
 
-class china_symbol_table {
+template<typename KeyType = std::string, typename ValueType = VALUE_TYPE>
+class combine_symbol_table : public std::unordered_map<KeyType, ValueType> {
   public:
-    
-    china_symbol_table() {
+    static constexpr const char* table_name = "combine";
+    static_assert(std::is_same<KeyType, std::string>::value || 
+                 std::is_same<KeyType, std::string_view>::value,
+                 "KeyType must be std::string or std::string_view");
+
+    combine_symbol_table() {
     }
-    china_symbol_table(const std::unordered_map<std::string, VALUE_TYPE>& symbols, const vector<std::string>& find_data) {
-         std::unordered_map<std::string, VALUE_TYPE> future_map;
-         std::unordered_map<std::string, VALUE_TYPE> stock_map;
-         std::unordered_map<std::string, VALUE_TYPE> option_map;
-         for(auto &p : symbols) {
-            std::string sym = p.first;
+
+    bool doneModify() {
+         stock.clear();
+         future.clear();
+         option.clear();
+         for(auto &p : *this) {
+            KeyType sym = p.first;
             if(sym.size() == 5 || sym.size() == 6) {
-                future_map[sym] = p.second;
+                future[sym] = p.second;
             } else if(sym[6]=='.') { //600000.SSE, 000001.SZE
-                stock_map[sym] = p.second;
+                stock[sym] = p.second;
             } else {
-                option_map[sym] = p.second;
+                option[sym] = p.second;
             }
          }
-         stock.init(stock_map);
-         future.init(future_map);
-         option.init(option_map);
+         return stock.doneModify() && future.doneModify() && option.doneModify();
     }
 
     value32 get_value(const char *sym) const {
@@ -432,10 +460,10 @@ class china_symbol_table {
     }
 
 private:
-     stock_symbol_table<> stock;
-     future_symbol_table<> future;
-     //future_no_conflict_symbol_table<> future_no_conflict;
-     option_symbol_table<> option;
+     stock_symbol_table<KeyType, ValueType> stock;
+     future_symbol_table<KeyType, ValueType> future;
+     //future_no_conflict_symbol_table<KeyType, ValueType> future_no_conflict;
+     option_symbol_table<KeyType, ValueType> option;
 };
 
 #endif // CYB_HASH_H
