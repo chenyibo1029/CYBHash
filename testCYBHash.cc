@@ -54,13 +54,18 @@ bool check_sym(const string &s) {
         } else {
             return false;
         }
-    }
-    if (s[6] == '.') { // 600000.SSE, 000001.SZE
+    } else if (s[6] == '.') { // 600000.SSE, 000001.SZE
         if (mode == "stock") {
             return true;
         } else {
             return false;
         }
+    } else if(s.length()>8) {
+        if (mode == "option") {
+            return true;
+        } else {
+            return false;
+        }   
     }
     return false;
 }
@@ -275,17 +280,35 @@ void bench_stock_symbol_table() {
     auto before = getns();
     for (int l = 0; l < loop; l++) {
         for (auto &s : find_data) {
-            // int result = table.get_value(s.data());
-            // if( (symbols.find(s)==symbols.end() && result!=0) || (symbols.find(s)!=symbols.end() && symbols[s] !=
-            // result) ) {
-            //   cout<<"error "<<s<<" "<<symbols[s]<<" "<<result<<endl;
-            // }
             sum += stock_table.get_value(s.data());
         }
     }
     auto after = getns();
     double avg_ns = static_cast<double>(after - before) / (loop * find_data.size());
     cout << "stock_symbol_table sum: " << sum << " avg lat: " << avg_ns << " ns per lookup " << (1000000000.0 / avg_ns)
+         << " lookups/sec" << endl;
+}
+
+void bench_option_symbol_table() {
+    option_symbol_table<std::string, VALUE_TYPE> option_table;
+    for (int i = 0; i < tbl_data.size(); i++) {
+        option_table[tbl_data[i]] = i + 1;
+    }
+
+    if(!option_table.sync_with_unordered_map()) {
+        cout<<"table size too large"<<endl;
+        return;
+    }
+    uint64_t sum = 0;
+    auto before = getns();
+    for (int l = 0; l < loop; l++) {
+        for (auto &s : find_data) {
+            sum += option_table.get_value(s.data());
+        }
+    }
+    auto after = getns();
+    double avg_ns = static_cast<double>(after - before) / (loop * find_data.size());
+    cout << "option_symbol_table sum: " << sum << " avg lat: " << avg_ns << " ns per lookup " << (1000000000.0 / avg_ns)
          << " lookups/sec" << endl;
 }
 
@@ -329,6 +352,8 @@ int main(int argc, char **argv) {
         bench_future_symbol_table();
     } else if (mode == "stock") {
         bench_stock_symbol_table();
+    } else if(mode=="option") {
+        bench_option_symbol_table();
     } else {
         bench_combine_symbol_table();
     }

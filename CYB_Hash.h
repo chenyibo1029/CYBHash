@@ -109,7 +109,7 @@ public:
     }
 
     //try to find a mask that minimizes the number of collisions
-    IDType find_min_mask_by_cost(const vector<IDType> &ids, bool allow_conflict) {
+    IDType find_min_mask_by_cost(const vector<IDType> &ids, bool allow_conflict, int highest_bit) {
         if(!allow_id_conflict) {
             if(allow_conflict) {
                 cout<<"the mode should be allow_id_conflict = false"<<endl;
@@ -120,10 +120,10 @@ public:
         std::map<IDType, std::pair<IDType, int>> hash_values;
         //cout << "ids.size() " << ids.size() << endl;
         long long min_cost = ids.size() * ids.size();
-        for (int bits_added = 0; bits_added < sizeof(IDType) * 8; bits_added++) {
+        for (int bits_added = 0; bits_added < highest_bit; bits_added++) {
             int best_bit = -1;
             // for (int bit = sizeof(IDType)*8-1; bit >=0; bit--) {
-            for (int bit = 0; bit < sizeof(IDType) * 8; bit++) {
+            for (int bit = 0; bit < highest_bit; bit++) {
                 IDType bit_mask = ((IDType)1) << bit;
                 if (mask & bit_mask)
                     continue; 
@@ -230,7 +230,7 @@ public:
 
     // 默认的calculate_mask实现，派生类可以重写
     IDType calculate_mask(const vector<IDType>& ids) {
-        return find_min_mask_by_cost(ids, allow_id_conflict);
+        return find_min_mask_by_cost(ids, allow_id_conflict, sizeof(IDType) * 8);
     }
     
     void fill_table() {
@@ -361,12 +361,14 @@ public:
     
     //do not allow id conflict
     IDType calculate_mask(const vector<IDType>& ids) {
-        return find_min_mask_by_cost(ids, false);
+        return find_min_mask_by_cost(ids, false, sizeof(IDType) * 6);
     }
 
     inline IDType get_id(const char *sym) const {
         key64 id = *(uint64_t*)sym & 0xffffffffffff;
         return id & (-(sym[5] == 0 || sym[6] == 0));
+        
+        //return id; // if the market data does't contain option code, we can use this
     }
 };
         
@@ -435,7 +437,7 @@ public:
         }
         
         // 使用所有ID计算掩码，不允许冲突
-        mask = find_min_mask_by_cost(all_ids, false);
+        mask = find_min_mask_by_cost(all_ids, false, sizeof(IDType) * 6);
         
         future.resize(1 << __builtin_popcountll(mask));
         future_size = 1 << __builtin_popcountll(mask);
@@ -456,12 +458,7 @@ public:
     }
     
     inline IDType get_id(const char *sym) const {
-        // 直接读取前6个字节作为ID，避免掩码操作
-        // 使用位移操作代替乘法，编译器会优化成条件移动指令
-        IDType id = *(uint64_t*)sym & 0xffffffffffff;
-        return id & (-(sym[5] == 0 || sym[6] == 0));
-        // 使用位运算 id & (-(condition)) 代替 id *= condition
-        // 当条件为真时，-1 & id = id；当条件为假时，0 & id = 0
+        return *(uint64_t*)sym;
     }
     
     inline ValueType get_value(const char *sym) const {
