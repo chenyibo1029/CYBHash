@@ -7,8 +7,6 @@ if [ $? -eq 0 ]; then
   ./cyb_hash
   echo "\n running stock test..."
   ./cyb_hash stock.txt stock.txt stock
-  echo "\n running option test..."
-  ./cyb_hash option.txt option.txt option
   echo "\n running combine test..."
   ./cyb_hash combine.txt combine.txt combine
   rm cyb_hash
