@@ -49,13 +49,13 @@ bool check_sym(const string &s) {
         return true;
     }
     if (s.length() <= 6) {
-        if (mode == "stock") {
-            return false;
-        } else {
+        if (mode == "future") {
             return true;
+        } else {
+            return false;
         }
     }
-    if (s.length() == 10 && s[6] == '.') {
+    if (s[6] == '.') { // 600000.SSE, 000001.SZE
         if (mode == "stock") {
             return true;
         } else {

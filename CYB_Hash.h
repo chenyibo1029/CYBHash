@@ -87,7 +87,7 @@ public:
             if(find(ids.begin(), ids.end(), id) != ids.end()) {
                 for(auto &q : *this) {
                     if(static_cast<Derived*>(this)->get_id(q.first.data()) == id) {
-                        printf("error %s %s id: %x\n", q.first.data(), p.first.data(), id);
+                        printf("error %s %s id: %llx\n", q.first.data(), p.first.data(), id);
                         exit(0);
                     }
                 }
@@ -336,15 +336,15 @@ public:
     
     inline IDType get_id(const char *sym) const {
         key64 id = *(key64*)sym;
-        id &= 0xffffffffffff;
-        id += sym[8]<<4; // 600000.SSE, 000001.SZE, exchange code is at 8th position
+        char *p = (char*)&id;
+        p[7] = sym[8]; // 600000.SSE, 000001.SZE, exchange code is at 8th position
         return id;
     }
 
     inline IDType get_id(const char *sym, const char *exchange) const {
         key64 id = *(key64*)sym;
-        id &= 0xffffffffffff;
-        id += exchange[1]<<4; // exchange "SSE" or "SZE"
+        char *p = (char*)&id;
+        p[7] = exchange[1]; // exchange "SSE" or "SZE"
         return id;
     }
 };
