@@ -4,11 +4,17 @@ g++ -std=c++17 -mbmi2 -O3 -DNDEBUG testCYBHash.cc -o cyb_hash
 
 if [ $? -eq 0 ]; then
   echo ''
-  echo " running stock test..."
-  ./cyb_hash stock.txt stock.txt stock
-  echo ''
   echo " running combine test..."
   ./cyb_hash combine.txt combine.txt combine
+  echo ''
+  echo " running combine  future test..."
+  ./cyb_hash shfe.txt shfe.txt combine
+  echo ''
+  echo " running combine  stock test..."
+  ./cyb_hash stock.txt stock.txt combine
+  echo ''
+  echo " running stock test..."
+  ./cyb_hash stock.txt stock.txt stock
   echo ''
   echo " running future option test..."
   ./cyb_hash dce.txt combine.txt

@@ -76,15 +76,21 @@ public:
     bool sync_with_unordered_map() {
         if (this->size() == 0) {
             mask = 0;
+            keyValue.resize(1);
+            keyValue[0] = std::pair<IDType, ValueType>{keyValue.size(), ValueType()};
             return true;
         }
 
         if (this->size() > 1 << MAX_BIT_SIZE) {
-            cout<<"table size too large, try using template parameter SmallTbl"<<endl;
+            cout<<"table size too large"<<endl;
             return false;
         }
         vector<IDType> ids;
         for(auto &p : *this) {
+            if(p.first.size()>16) {
+                cout<<p.first<<" symbol too long max length supported is 16"<<endl;
+                exit(0);
+            }
             IDType id = static_cast<Derived*>(this)->get_id(p.first.data());
             if(find(ids.begin(), ids.end(), id) != ids.end()) {
                 for(auto &q : *this) {
@@ -248,8 +254,8 @@ class option_symbol_table : public base_symbol_table<option_symbol_table<KeyType
 public:
     static constexpr const char* table_name = "option";
     using Base = base_symbol_table<option_symbol_table<KeyType, ValueType>, KeyType, ValueType>;
-    using Base::get_value;
     using Base::keyValue;
+    using Base::get_value;
     using Base::mask;
 
     // The requires clause should be in a concept or function template, not as a standalone statement
@@ -261,46 +267,38 @@ public:
     inline IDType get_id(const char *sym) const {
         size_t len = 8;
         for (const char* p = sym+8; *p; ++p) len++;
-        key64 t64 = *(key64*)(sym+8);
-        static const uint64_t masks[] = {
-            0xff,               // 9: 1 byte
-            0xffff,             // 10: 2 bytes
-            0xffffff,           // 11: 3 bytes
-            0xffffffff,         // 12: 4 bytes
-            0xffffffffff,       // 13: 5 bytes
-            0xffffffffffff,     // 14: 6 bytes
-            0xffffffffffffff,   // 15: 7 bytes
-            0xffffffffffffffff  // 16: 8 bytes
-        };
-        t64 &= masks[len - 9];
-        key64 a = (*(key64*)sym);
-        a += t64<<20;
-        return a;
+        return get_id(sym, len);
     }
 
-    inline IDType get_id(const char *sym, size_t len) const {
-        key64 t64 = *(key64*)(sym+8);
+    inline IDType get_id(const char *sym, const size_t len) const {
+        // eb2505-C-10000,  HO2504-P-2375 future option
         static const uint64_t masks[] = {
-            0xff,               // 9: 1 byte
-            0xffff,             // 10: 2 bytes
-            0xffffff,           // 11: 3 bytes
-            0xffffffff,         // 12: 4 bytes
-            0xffffffffff,       // 13: 5 bytes
-            0xffffffffffff,     // 14: 6 bytes
-            0xffffffffffffff,   // 15: 7 bytes
-            0xffffffffffffffff  // 16: 8 bytes
+            0x0f,               // 9: 1 byte
+            0x0f0f,             // 10: 2 bytes
+            0x0f0f0f,           // 11: 3 bytes
+            0x0f0f0f0f,         // 12: 4 bytes
+            0x0f0f0f0f0f,       // 13: 5 bytes
+            0x0f0f0f0f0f0f,     // 14: 6 bytes
+            0x0f0f0f0f0f0f0f,   // 15: 7 bytes
+            0x0f0f0f0f0f0f0f,   // 16: 8 bytes
         };
-        t64 &= masks[len - 9];
-        key64 a = (*(key64*)sym);
-        a += t64<<20;
-        return a;
+        key64 idLeft = *(key64 *)sym;
+        key64 leftInfo = _pext_u64(idLeft, 0x0f0f0f0f0f0f5f1f);
+        key64 idRight = *(key64 *)(sym + 8);
+        key64 rightInfo = _pext_u64(idRight, masks[len - 9]);
+        return leftInfo + (rightInfo << 40);
     }
-   
+
+    inline IDType get_id(const char *sym, const char *exch) const {
+        // 90005134 SZE, 10009005 SSE, for etf option
+        return (*(key64 *)sym) + (exch[1] << 4);
+    }
+
     inline ValueType get_value(const char *sym, size_t len) const {
-         IDType id = get_id(sym, len);
-         IDType k = _pext_u64(id, mask);  // 使用Base::_pext_u64而不是get_key
-         int size_mask = keyValue.size() - 1;
-         for (int pos = k;; pos = (pos + 1) & size_mask) {
+        IDType id = get_id(sym, len);
+        IDType k = _pext_u64(id, mask); // 使用Base::_pext_u64而不是get_key
+        int size_mask = keyValue.size() - 1;
+        for (int pos = k;; pos = (pos + 1) & size_mask) {
             if (keyValue[pos].first == id) {
                 return keyValue[pos].second;
             } else if (keyValue[pos].first == keyValue.size()) {
@@ -372,7 +370,7 @@ public:
 // 中间基类，包含future类的共同功能
 template<typename Derived, typename KeyType = std::string, typename ValueType = DEFAULT_VALUE_TYPE, 
          int MAX_BIT_SIZE = 25> // 添加最大位大小参数
-class future_base_table : public base_symbol_table<Derived, KeyType, ValueType> {
+class future_no_conflict_base_table : public base_symbol_table<Derived, KeyType, ValueType> {
 public:
     using Base = base_symbol_table<Derived, KeyType, ValueType>;
     using Base::find_min_mask_by_cost;
@@ -380,7 +378,7 @@ public:
 
     static constexpr const char* table_name = "future_base";
     
-    future_base_table() {}
+    future_no_conflict_base_table() {}
     
     // 共享的 sync_with_additional_symbols 实现
     bool sync_with_additional_symbols(const vector<KeyType>& all_symbols) {
@@ -458,9 +456,9 @@ protected:
 };
 
 template<typename KeyType = std::string, typename ValueType = DEFAULT_VALUE_TYPE>
-class future_no_conflict_table : public future_base_table<future_no_conflict_table<KeyType, ValueType>, KeyType, ValueType> {
+class future_no_conflict_table : public future_no_conflict_base_table<future_no_conflict_table<KeyType, ValueType>, KeyType, ValueType> {
 public:
-    using Base = future_base_table<future_no_conflict_table<KeyType, ValueType>, KeyType, ValueType>;
+    using Base = future_no_conflict_base_table<future_no_conflict_table<KeyType, ValueType>, KeyType, ValueType>;
     using Base::mask;
     
     static constexpr const char* table_name = "future_no_conflict";
@@ -473,9 +471,9 @@ public:
 };
 
 template<typename KeyType = std::string, typename ValueType = DEFAULT_VALUE_TYPE>
-class future_no_conf_no_opt_table : public future_base_table<future_no_conf_no_opt_table<KeyType, ValueType>, KeyType, ValueType> {
+class future_no_conf_no_opt_table : public future_no_conflict_base_table<future_no_conf_no_opt_table<KeyType, ValueType>, KeyType, ValueType> {
 public:
-    using Base = future_base_table<future_no_conf_no_opt_table<KeyType, ValueType>, KeyType, ValueType>;
+    using Base = future_no_conflict_base_table<future_no_conf_no_opt_table<KeyType, ValueType>, KeyType, ValueType>;
     using Base::mask;
     
     static constexpr const char* table_name = "future_no_conf_no_opt";
@@ -512,10 +510,14 @@ class combine_symbol_table : public std::unordered_map<KeyType, ValueType> {
                 option[sym.data()] = p.second;
             }
          }
+         bool result = true;
+         if(!stock.sync_with_unordered_map()) {
+             
+         }
          return stock.sync_with_unordered_map() && future.sync_with_unordered_map() && option.sync_with_unordered_map();
     }
 
-    ValueType get_value(const char *sym) const {
+    inline ValueType get_value(const char *sym) const {
         if(sym[5]==0||sym[6]==0) {
           return future.get_value(sym);
         } else if(sym[6]=='.') {
@@ -525,7 +527,7 @@ class combine_symbol_table : public std::unordered_map<KeyType, ValueType> {
         }
     }
 
-    ValueType get_value(const char *sym, size_t len) const {
+    inline ValueType get_value(const char *sym, size_t len) const {
         if(sym[5]==0||sym[6]==0) {
           return future.get_value(sym);
         } else if(sym[6]=='.') { //600000.SSE, 000001.SZE
