@@ -243,12 +243,13 @@ void bench_future_symbol_table() {
     double avg_ns = static_cast<double>(after - before) / (loop * find_data.size());
     cout << "future_symbol_table sum: " << sum << " avg lat: " << avg_ns << " ns per lookup " << (1000000000.0 / avg_ns)
          << " lookups/sec" << endl;
-
-    future_no_conflict_symbol_table<std::string, VALUE_TYPE> future_no_conflict_table;
+        
+    
+    future_no_conflict_table<std::string, VALUE_TYPE> future_with_option_table;
     for (int i = 0; i < tbl_data.size(); i++) {
-        future_no_conflict_table[tbl_data[i]] = i + 1;
+        future_with_option_table[tbl_data[i]] = i + 1;
     }
-    if(!future_no_conflict_table.sync_with_additional_symbols(find_data)) {
+    if(!future_with_option_table.sync_with_additional_symbols(find_data)) {
         cout<<"table size too large"<<endl;
         return;
     }
@@ -256,13 +257,41 @@ void bench_future_symbol_table() {
     auto before2 = getns();
     for (int l = 0; l < loop; l++) {
         for (auto &s : find_data) {
-            sum2 += future_no_conflict_table.get_value(s.data());
+            sum2 += future_with_option_table.get_value(s.data());
         }
     }
     auto after2 = getns();
     double avg_ns2 = static_cast<double>(after2 - before2) / (loop * find_data.size());
-    cout << "future_no_conflict_symbol_table sum: " << sum2 << " avg lat: " << avg_ns2 << " ns per lookup "
+    cout << "future_with_option_table sum: " << sum2 << " avg lat: " << avg_ns2 << " ns per lookup "
          << (1000000000.0 / avg_ns2) << " lookups/sec" << endl;
+
+
+    for(auto &s : find_data) {
+        if(s.length() > 8) {
+            cout<<"contain option code: "<<s<<endl;
+            return;
+        }
+    }
+    // 测试不包含期权代码的future_no_conflict_symbol_table
+    future_no_conf_no_opt_table<std::string, VALUE_TYPE> future_no_option_table;
+    for (int i = 0; i < tbl_data.size(); i++) {
+        future_no_option_table[tbl_data[i]] = i + 1;
+    }
+    if(!future_no_option_table.sync_with_additional_symbols(find_data)) {
+        cout<<"table size too large"<<endl;
+        return;
+    }
+    uint64_t sum3 = 0;
+    auto before3 = getns();
+    for (int l = 0; l < loop; l++) {
+        for (auto &s : find_data) {
+            sum3 += future_no_option_table.get_value(s.data());
+        }
+    }
+    auto after3 = getns();
+    double avg_ns3 = static_cast<double>(after3 - before3) / (loop * find_data.size());
+    cout << "future_no_option_table sum: " << sum3 << " avg lat: " << avg_ns3 << " ns per lookup "
+         << (1000000000.0 / avg_ns3) << " lookups/sec" << endl;
 }
 
 void bench_stock_symbol_table() {
