@@ -87,9 +87,9 @@ public:
         }
         vector<IDType> ids;
         for(auto &p : *this) {
-            if(p.first.size()>16) {
-                cout<<p.first<<" symbol too long max length supported is 16"<<endl;
-                exit(0);
+            if(p.first.size()<5 || p.first.size()>16 || p.first.size()==16 && p.first[15]!='0') {
+                std::cout << p.first << " min length is expected to be 5, symbol too long max length supported is 16, and if the length is 16, the last character must be '0'" << std::endl;
+                std::exit(0);
             }
             IDType id = static_cast<Derived*>(this)->get_id(p.first.data());
             if(find(ids.begin(), ids.end(), id) != ids.end()) {
@@ -286,7 +286,7 @@ public:
         key64 leftInfo = _pext_u64(idLeft, 0x0f0f0f0f0f0f5f1f);
         key64 idRight = *(key64 *)(sym + 8);
         key64 rightInfo = _pext_u64(idRight, masks[len - 9]);
-        return leftInfo + (rightInfo << 40);
+        return leftInfo + (rightInfo << 35);
     }
 
     inline IDType get_id(const char *sym, const char *exch) const {
@@ -296,7 +296,7 @@ public:
 
     inline ValueType get_value(const char *sym, size_t len) const {
         IDType id = get_id(sym, len);
-        IDType k = _pext_u64(id, mask); // 使用Base::_pext_u64而不是get_key
+        IDType k = _pext_u64(id, mask);
         int size_mask = keyValue.size() - 1;
         for (int pos = k;; pos = (pos + 1) & size_mask) {
             if (keyValue[pos].first == id) {
@@ -352,9 +352,8 @@ public:
 
     inline IDType get_id(const char *sym) const {
         key64 id = *(uint64_t*)sym & 0xffffffffffff;
-        return id & (-(sym[5] == 0 || sym[6] == 0));
-        
         //return id; // if the market data does't contain option code, we can use this
+        return id & (-(sym[5] == 0 || sym[6] == 0));
     }
 
     inline ValueType get_value(const char *sym) const {
