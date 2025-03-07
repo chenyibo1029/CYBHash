@@ -373,7 +373,6 @@ int main(int argc, char **argv) {
     //bench_hash<3>();
     //bench_hash<4>();
     //bench_hash<5>();
-    //bench_hash<6>();
     if (mode == "future") {
         bench_future_symbol_table();
     } else if (mode == "stock") {

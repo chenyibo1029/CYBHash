@@ -105,6 +105,9 @@ public:
         
         // 使用派生类可能重写的方法计算掩码
         mask = static_cast<Derived*>(this)->calculate_mask(ids);
+        if(mask == 0) {
+            return false;
+        }
         
         // 初始化查找表
         keyValue.resize(1 << __builtin_popcountll(mask));
@@ -125,7 +128,7 @@ public:
             } 
         }
         IDType mask = 0; // 初始掩码为0（不选择任何位）
-        std::map<IDType, std::pair<IDType, int>> hash_values;
+        std::map<IDType, int> hash_values;
         //cout << "ids.size() " << ids.size() << endl;
         long long min_cost = ids.size() * ids.size();
         for (int bits_added = 0; bits_added < highest_bit; bits_added++) {
@@ -143,15 +146,15 @@ public:
 
                 for (auto id : ids) {
                     IDType hash = _pext_u64(id, test_mask);
-                    if (hash_values.find(hash) == hash_values.end()) {
-                        hash_values[hash] = pair{0, 0};
-                    }
-                    hash_values[hash].first++;
+                    hash_values[hash]++;
                     // cout<<id<<" "<<test_mask<<" hash: "<<hash<<endl;
                 }
                 long long collisions = 0;
                 for (auto &p : hash_values) {
-                    collisions += p.second.first * (p.second.first - 1) / 2;
+                    if(p.first == 0) { //0 may be conflict with option code
+                        collisions += 1; //so if final hash is 0, it means this mask is not safe for future option combine case
+                    }
+                    collisions += p.second * (p.second - 1) / 2;
                 }
                 if (collisions < min_cost) {
                     min_cost = collisions;
@@ -177,25 +180,16 @@ public:
                 return mask;
             }
         }
+        if(allow_conflict) {
+            return mask;
+        } else if(min_cost>0) {
+            printf("find mask failed, min_cost %lld ids.size() %ld\n", min_cost, ids.size());
+            return 0;
+        }
         //printf("find mask by cost %lx %d\n", mask, __builtin_popcountll(mask));
         return mask;
     }
     
-    bool check_mask(IDType new_mask, const vector<IDType>& ids) {
-        vector<IDType> se;
-        for(auto id : ids) {
-            IDType p = _pext_u64(id, new_mask);
-            if(p==0) {
-                return false;
-            }
-            if(find(se.begin(), se.end(), p) != se.end()) {
-                return false;
-            }
-            se.push_back(p);
-        }
-        return true;
-    }
-
     inline ValueType get_no_key_conflict_value(const char *sym) const {
         //in some case, all symbols can be perfectly mapped to a single key
         // we can return the value directly
@@ -318,16 +312,8 @@ public:
                  "KeyType must be std::string or std::string_view");
     
     inline IDType get_id(const char *sym) const {
-        key64 id = *(key64*)sym;
-        char *p = (char*)&id;
-        p[7] = sym[8]; // 600000.SSE, 000001.SZE, exchange code is at 8th position
-        return id;
-    }
-
-    inline IDType get_id(const char *sym, const char *exchange) const {
-        key64 id = *(key64*)sym;
-        char *p = (char*)&id;
-        p[7] = exchange[1]; // exchange "SSE" or "SZE"
+        key64 id = *(key64*)sym; //600000.SSE 000001.SZE 688001.BSE
+        id += sym[8]<<4;
         return id;
     }
 };
