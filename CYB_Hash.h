@@ -267,14 +267,14 @@ public:
     inline IDType get_id(const char *sym, const size_t len) const {
         // eb2505-C-10000,  HO2504-P-2375 future option
         static const uint64_t masks[] = {
-            0x0f,               // 9: 1 byte
-            0x0f0f,             // 10: 2 bytes
-            0x0f0f0f,           // 11: 3 bytes
-            0x0f0f0f0f,         // 12: 4 bytes
-            0x0f0f0f0f0f,       // 13: 5 bytes
-            0x0f0f0f0f0f0f,     // 14: 6 bytes
-            0x0f0f0f0f0f0f0f,   // 15: 7 bytes
-            0x0f0f0f0f0f0f0f,   // 16: 8 bytes
+            0x0f,                 // 9: 1 byte
+            0x0f0f,               // 10: 2 bytes
+            0x0f0f0f,             // 11: 3 bytes
+            0x0f0f0f0f,           // 12: 4 bytes
+            0x0f0f0f0f0f,         // 13: 5 bytes
+            0x0f0f0f0f0f0f,       // 14: 6 bytes
+            0x0f0f0f0f0f0f0f,     // 15: 7 bytes
+            0x010f0f0f0f0f0f0f,   // 16: 8 bytes
         };
         key64 idLeft = *(key64 *)sym;
         key64 leftInfo = _pext_u64(idLeft, 0x0f0f0f0f0f0f5f1f);
@@ -337,7 +337,7 @@ public:
     }
 
     inline IDType get_id(const char *sym) const {
-        key64 id = *(uint64_t*)sym & 0xffffffffffff;
+        key64 id = *(uint64_t*)sym & 0xfFfFfFfFfFfF;
         //return id; // if the market data does't contain option code, we can use this
         return id & (-(sym[5] == 0 || sym[6] == 0));
     }
