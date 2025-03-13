@@ -38,6 +38,8 @@ using namespace std;
 #include <algorithm>
 #include <cstdint>
 #include <string>
+#include <stdexcept> // 添加异常支持
+#include <memory>    // std::auto_ptr 的头文件
 
 typedef unsigned int DEFAULT_VALUE_TYPE;
 typedef unsigned long long key64;
@@ -47,7 +49,7 @@ typedef key64 IDType;
 constexpr const int MAX_BIT_SIZE = 25;
 
 // 基于CRTP的符号表基类
-template<typename Derived, typename KeyType, typename ValueType, bool allow_id_conflict = true>
+template<typename Derived, typename KeyType, typename ValueType>
 class base_symbol_table : public std::unordered_map<KeyType, ValueType> {
 public:
     // 使用static_assert确保KeyType只能是string, string_view或char*
@@ -68,8 +70,8 @@ public:
         const char *p = "600000.SSE";
         key64 id = *(key64*)p;
         if((id & 0xff) != '6') {
-            cout<<"big endian, unpexpected"<<endl;
-            exit(1);
+            std::cout<<"big endian, unpexpected"<<std::endl;
+            throw std::runtime_error("Unexpected big endian detected");
         }
     }
 
@@ -121,12 +123,6 @@ public:
 
     //try to find a mask that minimizes the number of collisions
     IDType find_min_mask_by_cost(const vector<IDType> &ids, bool allow_conflict, int highest_bit) {
-        if(!allow_id_conflict) {
-            if(allow_conflict) {
-                cout<<"the mode should be allow_id_conflict = false"<<endl;
-                exit(0);
-            } 
-        }
         IDType mask = 0; // 初始掩码为0（不选择任何位）
         std::map<IDType, int> hash_values;
         //cout << "ids.size() " << ids.size() << endl;
@@ -184,7 +180,7 @@ public:
             return mask;
         } else if(min_cost>0) {
             printf("find mask failed, min_cost %lld ids.size() %ld\n", min_cost, ids.size());
-            return 0;
+            exit(0);
         }
         //printf("find mask by cost %lx %d\n", mask, __builtin_popcountll(mask));
         return mask;
@@ -220,7 +216,7 @@ public:
 
     // 默认的calculate_mask实现，派生类可以重写
     IDType calculate_mask(const vector<IDType>& ids) {
-        return find_min_mask_by_cost(ids, allow_id_conflict, sizeof(IDType) * 8);
+        return find_min_mask_by_cost(ids, true, sizeof(IDType) * 8);
     }
     
     void fill_table() {
@@ -303,8 +299,8 @@ public:
     }
 };
 
-template<typename KeyType = std::string, typename ValueType = DEFAULT_VALUE_TYPE, bool allow_id_conflict = true>
-class stock_symbol_table : public base_symbol_table<stock_symbol_table<KeyType, ValueType, allow_id_conflict>, KeyType, ValueType> {
+template<typename KeyType = std::string, typename ValueType = DEFAULT_VALUE_TYPE>
+class stock_symbol_table : public base_symbol_table<stock_symbol_table<KeyType, ValueType>, KeyType, ValueType> {
 public:
     static constexpr const char* table_name = "stock";
     static_assert(std::is_same<KeyType, std::string>::value || 
@@ -312,16 +308,39 @@ public:
                  "KeyType must be std::string or std::string_view");
     
     inline IDType get_id(const char *sym) const {
-        key64 id = *(key64*)sym; //600000.SSE 000001.SZE 688001.BSE
+        key64 id = *(key64*)sym; //600000.SSE 000001.SZE 830799.BSE
         id += sym[8]<<4;
         return id;
     }
+
 };
 
-template<typename KeyType = std::string, typename ValueType = DEFAULT_VALUE_TYPE, bool allow_id_conflict = false>
-class future_symbol_table : public base_symbol_table<future_symbol_table<KeyType, ValueType, allow_id_conflict>, KeyType, ValueType> {
+template<typename KeyType = std::string, typename ValueType = DEFAULT_VALUE_TYPE>
+class stock6_symbol_table : public base_symbol_table<stock6_symbol_table<KeyType, ValueType>, KeyType, ValueType> {
 public:
-    using Base = base_symbol_table<future_symbol_table<KeyType, ValueType, allow_id_conflict>, KeyType, ValueType>;
+    using Base = base_symbol_table<stock6_symbol_table<KeyType, ValueType>, KeyType, ValueType>;
+    using Base::find_min_mask_by_cost;
+
+    static constexpr const char* table_name = "stock6";
+    static_assert(std::is_same<KeyType, std::string>::value || 
+                 std::is_same<KeyType, std::string_view>::value,
+                 "KeyType must be std::string or std::string_view");
+    
+    inline IDType get_id(const char *sym) const {
+        key64 id = *(key64*)sym; //600000 000001 830799
+        return id;
+    }
+
+    //allow id conflict
+    inline IDType calculate_mask(const vector<IDType>& ids) {
+        return find_min_mask_by_cost(ids, false, 48);
+    }
+};
+
+template<typename KeyType = std::string, typename ValueType = DEFAULT_VALUE_TYPE>
+class future_symbol_table : public base_symbol_table<future_symbol_table<KeyType, ValueType>, KeyType, ValueType> {
+public:
+    using Base = base_symbol_table<future_symbol_table<KeyType, ValueType>, KeyType, ValueType>;
     using Base::find_min_mask_by_cost;
     using Base::get_key;
     using Base::keyValue;
@@ -333,7 +352,7 @@ public:
     
     //do not allow id conflict
     inline IDType calculate_mask(const vector<IDType>& ids) {
-        return find_min_mask_by_cost(ids, false, sizeof(IDType) * 6);
+        return find_min_mask_by_cost(ids, false, 48);
     }
 
     inline IDType get_id(const char *sym) const {
