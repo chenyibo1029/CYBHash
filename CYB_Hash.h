@@ -328,6 +328,7 @@ public:
     
     inline IDType get_id(const char *sym) const {
         key64 id = *(key64*)sym; //600000 000001 830799
+        id &= 0xfFfFfFfFfFfF;
         return id;
     }
 
